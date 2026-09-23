@@ -241,9 +241,16 @@ check("健康检查", r.status_code == 200 and r.json()["status"] == "ok")
 
 r = client.get("/")
 check("首页", r.status_code == 200 and "重写规则调试台" in r.text)
+check("首页引用 share.js", r.status_code == 200 and "/static/share.js" in r.text)
+check("首页含分享按钮", "复制分享链接" in r.text)
 
 r = client.get("/static/app.js")
 check("静态 JS", r.status_code == 200)
+
+r = client.get("/static/share.js")
+check("分享编解码 JS", r.status_code == 200)
+check("share.js 带版本号片段", r.status_code == 200 and "v1:" in r.text
+      and "Base64URL" in r.text)
 
 # ---------------------------------------------------------------------------
 # 9. 全部内置示例可正常执行（errors 示例除外，其余必须 ok 且终止）

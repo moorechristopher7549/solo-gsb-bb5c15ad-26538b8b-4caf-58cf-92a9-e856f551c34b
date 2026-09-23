@@ -15,6 +15,7 @@ const maxStepsInput = $("maxStepsInput");
 const followRedirectsInput = $("followRedirectsInput");
 const runBtn = $("runBtn");
 const copyBtn = $("copyBtn");
+const shareBtn = $("shareBtn");
 const ruleCount = $("ruleCount");
 const exampleSelect = $("exampleSelect");
 const loadExampleBtn = $("loadExampleBtn");
@@ -28,6 +29,9 @@ const locationLine = $("locationLine");
 const locationValue = $("locationValue");
 const traceEl = $("trace");
 const toastEl = $("toast");
+const shareWarning = $("shareWarning");
+const shareWarningText = $("shareWarningText");
+const shareWarningClose = $("shareWarningClose");
 
 let lastResponse = null;
 let examples = [];
@@ -55,10 +59,10 @@ function toast(message, isError = false) {
   }, 2200);
 }
 
-async function copyText(text) {
+async function copyText(text, successMessage = "已复制到剪贴板") {
   try {
     await navigator.clipboard.writeText(text);
-    toast("已复制到剪贴板");
+    toast(successMessage);
   } catch (err) {
     // 降级：临时 textarea + execCommand
     const ta = document.createElement("textarea");
@@ -69,7 +73,7 @@ async function copyText(text) {
     ta.select();
     try {
       document.execCommand("copy");
-      toast("已复制到剪贴板");
+      toast(successMessage);
     } catch (e) {
       toast("复制失败，请手动选择文本", true);
     }
@@ -485,6 +489,103 @@ copyBtn.addEventListener("click", () => {
   copyText(buildReport(lastResponse.data, lastResponse.body));
 });
 
+// ---------------------------------------------------------------------------
+// 场景分享：状态保存在 URL 片段（#v1:<Base64URL>），不经过服务端
+// ---------------------------------------------------------------------------
+
+function showShareWarning(message) {
+  shareWarningText.textContent = message;
+  shareWarning.hidden = false;
+}
+
+shareWarningClose.addEventListener("click", () => {
+  shareWarning.hidden = true;
+});
+
+function readEditorState() {
+  return {
+    rules: editor.value,
+    path: pathInput.value.trim(),
+    max_steps: parseInt(maxStepsInput.value, 10),
+    follow_redirects: followRedirectsInput.checked,
+  };
+}
+
+function applyState(state) {
+  editor.value = state.rules;
+  pathInput.value = state.path;
+  maxStepsInput.value = String(state.max_steps);
+  followRedirectsInput.checked = state.follow_redirects;
+  errorLineSet = new Set();
+  editor.classList.remove("has-error-line");
+  errorList.hidden = true;
+  renderGutter();
+}
+
+shareBtn.addEventListener("click", async () => {
+  const state = readEditorState();
+
+  if (!state.path) {
+    toast("请输入请求路径后再生成分享链接", true);
+    pathInput.focus();
+    return;
+  }
+  if (!state.path.startsWith("/")) {
+    toast("请求路径必须以 / 开头，无法生成分享链接", true);
+    pathInput.focus();
+    return;
+  }
+  if (
+    !Number.isInteger(state.max_steps) ||
+    state.max_steps < 1 ||
+    state.max_steps > 500
+  ) {
+    toast("步数上限需为 1–500 之间的整数，无法生成分享链接", true);
+    maxStepsInput.focus();
+    return;
+  }
+
+  let hash;
+  try {
+    hash = ShareCodec.encodeStateHash(state);
+  } catch (err) {
+    toast(`生成分享链接失败：${err.message}`, true);
+    return;
+  }
+
+  const url = `${location.origin}${location.pathname}${location.search}${hash}`;
+  await copyText(url, "分享链接已复制（规则只在 URL 片段中，未发送给服务端）");
+
+  // 同步地址栏片段，便于直接转发，但不产生历史记录
+  history.replaceState(null, "", hash);
+});
+
+// 打开分享链接时恢复编辑状态；损坏 / 版本未知 / 字段非法时提示并保留默认界面
+function restoreFromHash() {
+  const result = ShareCodec.decodeLocationHash(location.hash);
+
+  if (result.kind === "ignored") return;
+
+  if (result.kind === "unknownVersion") {
+    showShareWarning(
+      `⚠️ 该分享链接使用了不受支持的版本（v${result.version}），已忽略并显示默认界面。`
+    );
+    history.replaceState(null, "", location.pathname + location.search);
+    return;
+  }
+
+  if (result.kind === "corrupt") {
+    showShareWarning(
+      `⚠️ 分享链接已损坏或包含非法字段（${result.reason}），无法恢复编辑状态，已显示默认界面。`
+    );
+    history.replaceState(null, "", location.pathname + location.search);
+    return;
+  }
+
+  applyState(result.state);
+  toast("已从分享链接恢复编辑状态，点击「运行调试」查看轨迹");
+}
+
 // Ctrl/Cmd + Enter 快捷运行
 document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
@@ -499,3 +600,4 @@ document.addEventListener("keydown", (e) => {
 
 renderGutter();
 loadExamples();
+restoreFromHash();
