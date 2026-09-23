@@ -245,6 +245,17 @@ check("首页", r.status_code == 200 and "重写规则调试台" in r.text)
 r = client.get("/static/app.js")
 check("静态 JS", r.status_code == 200)
 
+r = client.get("/static/share.js")
+check("分享编解码 JS 可访问", r.status_code == 200 and "ShareCodec" in r.text)
+
+r = client.get("/")
+html = r.text
+check("首页引入 share.js", "/static/share.js" in html)
+check("首页含复制分享链接按钮", 'id="shareBtn"' in html)
+check("首页含分享错误提示容器", 'id="shareNotice"' in html)
+# 片段链接只在客户端解析，服务端不提供任何分享状态接口
+check("服务端无分享状态端点", "/api/share" not in [r.path for r in app.routes])
+
 # ---------------------------------------------------------------------------
 # 9. 全部内置示例可正常执行（errors 示例除外，其余必须 ok 且终止）
 # ---------------------------------------------------------------------------

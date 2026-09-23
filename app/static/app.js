@@ -15,9 +15,13 @@ const maxStepsInput = $("maxStepsInput");
 const followRedirectsInput = $("followRedirectsInput");
 const runBtn = $("runBtn");
 const copyBtn = $("copyBtn");
+const shareBtn = $("shareBtn");
 const ruleCount = $("ruleCount");
 const exampleSelect = $("exampleSelect");
 const loadExampleBtn = $("loadExampleBtn");
+const shareNotice = $("shareNotice");
+const shareNoticeText = $("shareNoticeText");
+const shareNoticeClose = $("shareNoticeClose");
 
 const summary = $("summary");
 const statusBadge = $("statusBadge");
@@ -55,10 +59,10 @@ function toast(message, isError = false) {
   }, 2200);
 }
 
-async function copyText(text) {
+async function copyText(text, successMessage = "已复制到剪贴板") {
   try {
     await navigator.clipboard.writeText(text);
-    toast("已复制到剪贴板");
+    toast(successMessage);
   } catch (err) {
     // 降级：临时 textarea + execCommand
     const ta = document.createElement("textarea");
@@ -69,7 +73,7 @@ async function copyText(text) {
     ta.select();
     try {
       document.execCommand("copy");
-      toast("已复制到剪贴板");
+      toast(successMessage);
     } catch (e) {
       toast("复制失败，请手动选择文本", true);
     }
@@ -391,6 +395,106 @@ function buildReport(data, reqBody) {
 }
 
 // ---------------------------------------------------------------------------
+// 场景分享（状态保存在 URL 片段，不发送到服务端）
+// ---------------------------------------------------------------------------
+
+function showShareNotice(message) {
+  shareNoticeText.textContent = message;
+  shareNotice.hidden = false;
+}
+
+shareNoticeClose.addEventListener("click", () => {
+  shareNotice.hidden = true;
+});
+
+// 校验输入并收集待分享状态；不合法时提示并返回 null
+function collectShareState() {
+  const path = pathInput.value.trim();
+  if (!path) {
+    toast("请输入请求路径后再生成分享链接", true);
+    pathInput.focus();
+    return null;
+  }
+  if (!path.startsWith("/") || /\s/.test(path)) {
+    toast("请求路径必须以 / 开头且不含空白", true);
+    pathInput.focus();
+    return null;
+  }
+  const maxSteps = parseInt(maxStepsInput.value, 10);
+  if (!Number.isFinite(maxSteps) || maxSteps < 1 || maxSteps > 500) {
+    toast("步数上限需为 1–500 之间的整数", true);
+    maxStepsInput.focus();
+    return null;
+  }
+  return {
+    rules: editor.value,
+    path,
+    max_steps: maxSteps,
+    follow_redirects: followRedirectsInput.checked,
+  };
+}
+
+function resetResultPanel() {
+  lastResponse = null;
+  copyBtn.disabled = true;
+  ruleCount.textContent = "";
+  summary.hidden = true;
+  traceEl.innerHTML = "";
+  const ph = el("div", "placeholder");
+  ph.appendChild(el("p", "", "👈 在左侧编写规则并输入请求路径"));
+  ph.appendChild(
+    el("p", "muted", "点击「运行调试」后，这里会按顺序展示每次匹配、捕获组变量变化与最终响应")
+  );
+  traceEl.appendChild(ph);
+}
+
+function applySharedState(state) {
+  editor.value = state.rules;
+  pathInput.value = state.path;
+  maxStepsInput.value = String(state.max_steps);
+  followRedirectsInput.checked = state.follow_redirects;
+  errorLineSet = new Set();
+  editor.classList.remove("has-error-line");
+  errorList.hidden = true;
+  renderGutter();
+  resetResultPanel();
+}
+
+shareBtn.addEventListener("click", () => {
+  const state = collectShareState();
+  if (!state) return;
+
+  let fragment;
+  try {
+    fragment = ShareCodec.encodeShareState(state);
+  } catch (err) {
+    toast(`无法生成分享链接：${err.message}`, true);
+    return;
+  }
+
+  const url = `${location.origin}${location.pathname}${location.search}#${fragment}`;
+  copyText(url, "已复制分享链接：打开即可恢复相同编辑状态");
+  // 同步地址栏，刷新页面也能回到当前状态；片段不会发送到服务端
+  history.replaceState(null, "", `#${fragment}`);
+});
+
+// 打开分享链接时恢复编辑状态；损坏 / 未知版本 / 非法字段均保留默认界面并提示
+function restoreFromHash() {
+  const parsed = ShareCodec.parseFragment(location.hash);
+  if (parsed.status === "empty" || parsed.status === "ignored") return;
+
+  if (parsed.status === "error") {
+    showShareNotice(parsed.message);
+    // 清掉损坏片段，避免刷新后反复弹错；不触碰其它页面锚点
+    history.replaceState(null, "", location.pathname + location.search);
+    return;
+  }
+
+  applySharedState(parsed.state);
+  toast("已从分享链接恢复编辑状态，可点击「运行调试」查看结果");
+}
+
+// ---------------------------------------------------------------------------
 // 运行调试
 // ---------------------------------------------------------------------------
 
@@ -499,3 +603,4 @@ document.addEventListener("keydown", (e) => {
 
 renderGutter();
 loadExamples();
+restoreFromHash();

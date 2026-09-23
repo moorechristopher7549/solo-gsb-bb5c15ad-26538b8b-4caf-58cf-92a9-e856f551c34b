@@ -26,6 +26,11 @@
         </div>
       </div>
 
+      <div id="shareNotice" class="share-notice" hidden>
+        <span id="shareNoticeText" class="share-notice-text"></span>
+        <button id="shareNoticeClose" class="share-notice-close" type="button" aria-label="关闭提示">✕</button>
+      </div>
+
       <div class="editor-wrap" id="editorWrap">
         <div class="gutter" id="gutter"></div>
         <textarea
@@ -57,6 +62,7 @@
         <div class="actions">
           <button id="runBtn" class="btn btn-primary" type="button">▶ 运行调试</button>
           <button id="copyBtn" class="btn btn-secondary" type="button" disabled>📋 复制调试结果</button>
+          <button id="shareBtn" class="btn btn-secondary" type="button">🔗 复制分享链接</button>
           <span id="ruleCount" class="rule-count"></span>
         </div>
       </div>
@@ -97,6 +103,7 @@
 
   <div id="toast" class="toast" hidden></div>
 
+  <script src="/static/share.js" defer></script>
   <script src="/static/app.js" defer></script>
 </body>
 </html>
